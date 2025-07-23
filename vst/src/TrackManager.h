@@ -290,6 +290,9 @@ public:
 
 					juce::String velocityKey = "velocity_" + juce::String(m) + "_" + juce::String(s);
 					sequencerState.setProperty(velocityKey, track->sequencerData.velocities[m][s], nullptr);
+
+					juce::String pageKey = "stepPage_" + juce::String(m) + "_" + juce::String(s);
+					sequencerState.setProperty(pageKey, track->sequencerData.stepPages[m][s], nullptr);
 				}
 			}
 			trackState.appendChild(sequencerState, nullptr);
@@ -363,6 +366,7 @@ public:
 
 			track->usePages = trackState.getProperty("usePages", false);
 			track->currentPageIndex = trackState.getProperty("currentPageIndex", 0);
+			track->displayPageIndex = track->currentPageIndex;
 
 			if (track->usePages.load()) {
 				DBG("Loading track " << track->trackName << " with pages system");
@@ -505,6 +509,9 @@ public:
 
 						juce::String velocityKey = "velocity_" + juce::String(m) + "_" + juce::String(s);
 						track->sequencerData.velocities[m][s] = sequencerState.getProperty(velocityKey, 0.8f);
+
+						juce::String pageKey = "stepPage_" + juce::String(m) + "_" + juce::String(s);
+						track->sequencerData.stepPages[m][s] = sequencerState.getProperty(pageKey, 0);
 					}
 				}
 			}

@@ -862,27 +862,27 @@ void DjIaVstProcessor::generateLoopFromMidi(const juce::String& trackId)
 				DjIaClient::LoopRequest request;
 
 				if (track->usePages.load()) {
-					auto& currentPage = track->getCurrentPage();
+					auto& targetPage = track->pages[track->displayPageIndex];
 
-					if (!currentPage.selectedPrompt.isEmpty()) {
-						request.prompt = currentPage.selectedPrompt;
-						request.bpm = currentPage.generationBpm > 0 ? currentPage.generationBpm : static_cast<float>(getHostBpm());
-						request.key = !currentPage.generationKey.isEmpty() ? currentPage.generationKey : getGlobalKey();
-						request.generationDuration = currentPage.generationDuration > 0 ? static_cast<float>(currentPage.generationDuration) : static_cast<float>(getGlobalDuration());
+					if (!targetPage.selectedPrompt.isEmpty()) {
+						request.prompt = targetPage.selectedPrompt;
+						request.bpm = targetPage.generationBpm > 0 ? targetPage.generationBpm : static_cast<float>(getHostBpm());
+						request.key = !targetPage.generationKey.isEmpty() ? targetPage.generationKey : getGlobalKey();
+						request.generationDuration = targetPage.generationDuration > 0 ? static_cast<float>(targetPage.generationDuration) : static_cast<float>(getGlobalDuration());
 
-						request.preferredStems = currentPage.preferredStems;
+						request.preferredStems = targetPage.preferredStems;
 					}
 					else {
 						request = createGlobalLoopRequest();
-						currentPage.selectedPrompt = request.prompt;
-						currentPage.generationBpm = request.bpm;
-						currentPage.generationKey = request.key;
-						currentPage.generationDuration = static_cast<int>(request.generationDuration);
-						currentPage.preferredStems = request.preferredStems;
+						targetPage.selectedPrompt = request.prompt;
+						targetPage.generationBpm = request.bpm;
+						targetPage.generationKey = request.key;
+						targetPage.generationDuration = static_cast<int>(request.generationDuration);
+						targetPage.preferredStems = request.preferredStems;
 					}
 
 					track->syncLegacyProperties();
-					DBG("MIDI generation for page " << (char)('A' + track->currentPageIndex));
+					DBG("MIDI generation for page " << (char)('A' + track->displayPageIndex));
 				}
 				else {
 					if (!track->selectedPrompt.isEmpty()) {
@@ -2027,7 +2027,7 @@ void DjIaVstProcessor::loadAudioFileAsync(const juce::String& trackId, const juc
 		processAudioBPMAndSync(track);
 		juce::File permanentFile;
 		if (track->usePages.load()) {
-			permanentFile = getTrackPageAudioFile(trackId, track->currentPageIndex);
+			permanentFile = getTrackPageAudioFile(trackId, track->displayPageIndex);
 		}
 		else {
 			permanentFile = getTrackAudioFile(trackId);
@@ -2047,8 +2047,8 @@ void DjIaVstProcessor::loadAudioFileAsync(const juce::String& trackId, const juc
 		}
 
 		if (track->usePages.load()) {
-			auto& currentPage = track->getCurrentPage();
-			currentPage.audioFilePath = permanentFile.getFullPathName();
+			auto& targetPage = track->pages[track->displayPageIndex];
+			targetPage.audioFilePath = permanentFile.getFullPathName();
 		}
 		else {
 			track->audioFilePath = permanentFile.getFullPathName();
@@ -3051,22 +3051,20 @@ void DjIaVstProcessor::generateLoopFromGlobalSettings()
 				if (!track) return;
 
 				if (track->usePages.load()) {
-					auto& currentPage = track->getCurrentPage();
+					auto& targetPage = track->pages[track->displayPageIndex];
 
-					currentPage.selectedPrompt = getGlobalPrompt();
-					currentPage.generationBpm = getGlobalBpm();
-					currentPage.generationKey = getGlobalKey();
-					currentPage.generationDuration = getGlobalDuration();
+					targetPage.selectedPrompt = getGlobalPrompt();
+					targetPage.generationBpm = getGlobalBpm();
+					targetPage.generationKey = getGlobalKey();
+					targetPage.generationDuration = getGlobalDuration();
 
-					currentPage.preferredStems.clear();
-					if (isGlobalStemEnabled("drums")) currentPage.preferredStems.push_back("drums");
-					if (isGlobalStemEnabled("bass")) currentPage.preferredStems.push_back("bass");
-					if (isGlobalStemEnabled("other")) currentPage.preferredStems.push_back("other");
-					if (isGlobalStemEnabled("vocals")) currentPage.preferredStems.push_back("vocals");
-					if (isGlobalStemEnabled("guitar")) currentPage.preferredStems.push_back("guitar");
-					if (isGlobalStemEnabled("piano")) currentPage.preferredStems.push_back("piano");
-
-					track->syncLegacyProperties();
+					targetPage.preferredStems.clear();
+					if (isGlobalStemEnabled("drums")) targetPage.preferredStems.push_back("drums");
+					if (isGlobalStemEnabled("bass")) targetPage.preferredStems.push_back("bass");
+					if (isGlobalStemEnabled("other")) targetPage.preferredStems.push_back("other");
+					if (isGlobalStemEnabled("vocals")) targetPage.preferredStems.push_back("vocals");
+					if (isGlobalStemEnabled("guitar")) targetPage.preferredStems.push_back("guitar");
+					if (isGlobalStemEnabled("piano")) targetPage.preferredStems.push_back("piano");
 				}
 
 				auto request = createGlobalLoopRequest();
@@ -3299,22 +3297,47 @@ bool DjIaVstProcessor::previewSampleFromBank(const juce::String& sampleId)
 	return true;
 }
 
+SequencerComponent* DjIaVstProcessor::getSequencerForTrack(const juce::String& trackId)
+{
+	if (auto* editor = dynamic_cast<DjIaVstEditor*>(getActiveEditor())) {
+		return static_cast<SequencerComponent*>(editor->getSequencerForTrack(trackId));
+	}
+	return nullptr;
+}
+
 void DjIaVstProcessor::triggerSequencerStep(TrackData* track)
 {
-	if (getBypassSequencer())
-	{
-		return;
-	}
+	if (getBypassSequencer()) return;
+
 	int step = track->sequencerData.currentStep;
 	int measure = track->sequencerData.currentMeasure;
 	track->isArmed = false;
-	if (track->sequencerData.steps[measure][step])
-	{
-		if (!track->beatRepeatActive.load())
-		{
+
+	if (track->sequencerData.steps[measure][step]) {
+		if (track->usePages.load()) {
+			auto* sequencer = getSequencerForTrack(track->trackId);
+			if (sequencer) {
+				int targetPage = sequencer->getStepPageAssignment(measure, step);
+
+				if (targetPage == 4) {
+					DBG("Sequencer step " << step << " in USER mode - staying on page " <<
+						(char)('A' + track->currentPageIndex));
+				}
+				else {
+					if (targetPage != track->currentPageIndex) {
+						DBG("Sequencer switching from page " << (char)('A' + track->currentPageIndex) <<
+							" to page " << (char)('A' + targetPage) << " for step " << step);
+
+						track->setCurrentPage(targetPage);
+					}
+				}
+			}
+		}
+		if (!track->beatRepeatActive.load()) {
 			track->readPosition = 0.0;
 		}
 		playingTracks[track->midiNote] = track->trackId;
+
 		juce::MidiMessage noteOn = juce::MidiMessage::noteOn(1, track->midiNote,
 			(juce::uint8)(track->sequencerData.velocities[measure][step] * 127));
 		addSequencerMidiMessage(noteOn);

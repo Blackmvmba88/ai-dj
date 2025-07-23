@@ -20,6 +20,7 @@
 
 class DjIaVstEditor;
 class TrackComponent;
+class SequencerComponent;
 
 class DjIaVstProcessor : public juce::AudioProcessor,
 	public juce::AudioProcessorValueTreeState::Listener,
@@ -473,6 +474,8 @@ private:
 	void updateTrackPathsAfterMigration();
 	void checkBeatRepeatWithSampleCounter();
 	void generateLoopFromGlobalSettings();
+
+	SequencerComponent* getSequencerForTrack(const juce::String& trackId);
 
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DjIaVstProcessor);
 };

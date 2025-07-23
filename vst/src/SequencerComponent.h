@@ -13,11 +13,11 @@ class DjIaVstProcessor;
 class SequencerComponent : public juce::Component
 {
 public:
-	SequencerComponent(const juce::String &trackId, DjIaVstProcessor &processor);
+	SequencerComponent(const juce::String& trackId, DjIaVstProcessor& processor);
 
-	void paint(juce::Graphics &g) override;
+	void paint(juce::Graphics& g) override;
 	void resized() override;
-	void mouseDown(const juce::MouseEvent &event) override;
+	void mouseDown(const juce::MouseEvent& event) override;
 
 	void setCurrentStep(int step);
 	void setPlaying(bool playing);
@@ -28,12 +28,16 @@ public:
 
 	bool isSequencerPlaying() const { return isPlaying; }
 
+	int getStepPageAssignment(int measure, int step) const;
+
 private:
 	juce::String trackId;
-	DjIaVstProcessor &audioProcessor;
+	DjIaVstProcessor& audioProcessor;
 
 	static const int MAX_STEPS_PER_MEASURE = 16;
 	static const int MAX_MEASURES = 4;
+
+	juce::Label pageHelpLabel;
 
 	bool isEditing = false;
 
@@ -46,17 +50,20 @@ private:
 	juce::Slider measureSlider;
 	juce::Slider timeSignatureSlider;
 
-	juce::Timer *editingTimer = nullptr;
+	juce::Timer* editingTimer = nullptr;
 
 	juce::TextButton prevMeasureButton, nextMeasureButton;
 
 	juce::Label measureLabel;
 	juce::Label currentPlayingMeasureLabel;
 
+	std::array<std::array<int, 16>, 4> stepPages;
+
 	juce::Rectangle<int> getStepBounds(int step);
 
 	void toggleStep(int step);
 	void setupUI();
+	juce::Colour getPageColour(int pageIndex);
 
 	int getTotalStepsForCurrentSignature() const;
 

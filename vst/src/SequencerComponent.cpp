@@ -9,7 +9,7 @@
 #include "PluginProcessor.h"
 #include "ColourPalette.h"
 
-SequencerComponent::SequencerComponent(const juce::String &trackId, DjIaVstProcessor &processor)
+SequencerComponent::SequencerComponent(const juce::String& trackId, DjIaVstProcessor& processor)
 	: trackId(trackId), audioProcessor(processor)
 {
 	setupUI();
@@ -28,38 +28,38 @@ void SequencerComponent::setupUI()
 	measureSlider.setColour(juce::Slider::trackColourId, ColourPalette::sliderTrack);
 	measureSlider.setColour(juce::Slider::backgroundColourId, juce::Colours::black);
 	measureSlider.onValueChange = [this]()
-	{
-		isEditing = true;
-		setNumMeasures((int)measureSlider.getValue());
-		juce::Timer::callAfterDelay(500, [this]()
-									{ isEditing = false; });
-	};
+		{
+			isEditing = true;
+			setNumMeasures((int)measureSlider.getValue());
+			juce::Timer::callAfterDelay(500, [this]()
+				{ isEditing = false; });
+		};
 
 	addAndMakeVisible(prevMeasureButton);
 	prevMeasureButton.setButtonText("<");
 	prevMeasureButton.onClick = [this]()
-	{
-		isEditing = true;
-		if (currentMeasure > 0)
 		{
-			setCurrentMeasure(currentMeasure - 1);
-		}
-		juce::Timer::callAfterDelay(500, [this]()
-									{ isEditing = false; });
-	};
+			isEditing = true;
+			if (currentMeasure > 0)
+			{
+				setCurrentMeasure(currentMeasure - 1);
+			}
+			juce::Timer::callAfterDelay(500, [this]()
+				{ isEditing = false; });
+		};
 
 	addAndMakeVisible(nextMeasureButton);
 	nextMeasureButton.setButtonText(">");
 	nextMeasureButton.onClick = [this]()
-	{
-		isEditing = true;
-		if (currentMeasure < numMeasures - 1)
 		{
-			setCurrentMeasure(currentMeasure + 1);
-		}
-		juce::Timer::callAfterDelay(500, [this]()
-									{ isEditing = false; });
-	};
+			isEditing = true;
+			if (currentMeasure < numMeasures - 1)
+			{
+				setCurrentMeasure(currentMeasure + 1);
+			}
+			juce::Timer::callAfterDelay(500, [this]()
+				{ isEditing = false; });
+		};
 
 	addAndMakeVisible(measureLabel);
 	measureLabel.setText("1/1", juce::dontSendNotification);
@@ -71,9 +71,40 @@ void SequencerComponent::setupUI()
 	currentPlayingMeasureLabel.setColour(juce::Label::backgroundColourId, ColourPalette::backgroundDark);
 	currentPlayingMeasureLabel.setJustificationType(juce::Justification::centred);
 	currentPlayingMeasureLabel.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+
+	addAndMakeVisible(pageHelpLabel);
+	pageHelpLabel.setText("Click: A>>B>>C>>D>>USER>>Off", juce::dontSendNotification);
+	pageHelpLabel.setColour(juce::Label::textColourId, ColourPalette::textSecondary.withAlpha(0.7f));
+	pageHelpLabel.setJustificationType(juce::Justification::centredLeft);
+	pageHelpLabel.setFont(juce::FontOptions(9.0f, juce::Font::plain));
+
+	for (int m = 0; m < 4; ++m) {
+		for (int s = 0; s < 16; ++s) {
+			stepPages[m][s] = 0;
+		}
+	}
 }
 
-void SequencerComponent::paint(juce::Graphics &g)
+juce::Colour SequencerComponent::getPageColour(int pageIndex)
+{
+	switch (pageIndex) {
+	case 0: return juce::Colour(0xff81C784);
+	case 1: return juce::Colour(0xff64B5F6);
+	case 2: return juce::Colour(0xffFFB74D);
+	case 3: return juce::Colour(0xffF06292);
+	case 4: return juce::Colour(0xffBA68C8);
+	default: return ColourPalette::textPrimary;
+	}
+}
+int SequencerComponent::getStepPageAssignment(int measure, int step) const
+{
+	if (measure >= 0 && measure < MAX_MEASURES && step >= 0 && step < 16) {
+		return stepPages[measure][step];
+	}
+	return 0;
+}
+
+void SequencerComponent::paint(juce::Graphics& g)
 {
 	auto bounds = getLocalBounds();
 
@@ -89,7 +120,7 @@ void SequencerComponent::paint(juce::Graphics &g)
 	juce::Colour beatColour = ColourPalette::sequencerBeat;
 	juce::Colour subBeatColour = ColourPalette::sequencerSubBeat;
 
-	TrackData *track = audioProcessor.getTrack(trackId);
+	TrackData* track = audioProcessor.getTrack(trackId);
 	if (!track)
 	{
 		g.setColour(ColourPalette::textDanger);
@@ -166,8 +197,15 @@ void SequencerComponent::paint(juce::Graphics &g)
 		}
 		else if (track->sequencerData.steps[safeMeasure][i])
 		{
-			stepColour = trackColour;
-			borderColour = trackColour.brighter(0.4f);
+			if (track->usePages.load()) {
+				int assignedPage = stepPages[safeMeasure][i];
+				stepColour = getPageColour(assignedPage);
+				borderColour = stepColour.brighter(0.4f);
+			}
+			else {
+				stepColour = trackColour;
+				borderColour = trackColour.brighter(0.4f);
+			}
 		}
 		else
 		{
@@ -248,7 +286,7 @@ juce::Rectangle<int> SequencerComponent::getStepBounds(int step)
 	return juce::Rectangle<int>(x, y, stepWidth, stepHeight);
 }
 
-void SequencerComponent::mouseDown(const juce::MouseEvent &event)
+void SequencerComponent::mouseDown(const juce::MouseEvent& event)
 {
 	int totalSteps = getTotalStepsForCurrentSignature();
 
@@ -260,7 +298,7 @@ void SequencerComponent::mouseDown(const juce::MouseEvent &event)
 			toggleStep(i);
 			repaint();
 			juce::Timer::callAfterDelay(50, [this]()
-										{ isEditing = false; });
+				{ isEditing = false; });
 			return;
 		}
 	}
@@ -274,19 +312,19 @@ int SequencerComponent::getTotalStepsForCurrentSignature() const
 	int stepsPerBeat;
 	if (denominator == 8)
 	{
-		stepsPerBeat = 2; // ← 2 subdivisions par croche (pas 4)
+		stepsPerBeat = 2;
 	}
 	else if (denominator == 4)
 	{
-		stepsPerBeat = 4; // 4 subdivisions par noire (16th notes)
+		stepsPerBeat = 4;
 	}
 	else if (denominator == 2)
 	{
-		stepsPerBeat = 8; // 8 subdivisions par blanche
+		stepsPerBeat = 8;
 	}
 	else
 	{
-		stepsPerBeat = 4; // Default
+		stepsPerBeat = 4;
 	}
 
 	return numerator * stepsPerBeat;
@@ -294,20 +332,35 @@ int SequencerComponent::getTotalStepsForCurrentSignature() const
 
 void SequencerComponent::toggleStep(int step)
 {
-	TrackData *track = audioProcessor.getTrack(trackId);
-	if (track)
-	{
-		int safeMeasure = juce::jlimit(0, MAX_MEASURES - 1, currentMeasure);
+	TrackData* track = audioProcessor.getTrack(trackId);
+	if (!track) return;
 
+	int safeMeasure = juce::jlimit(0, MAX_MEASURES - 1, currentMeasure);
+
+	if (track->usePages.load()) {
+		if (!track->sequencerData.steps[safeMeasure][step]) {
+			track->sequencerData.steps[safeMeasure][step] = true;
+			stepPages[safeMeasure][step] = 0;
+			track->sequencerData.stepPages[safeMeasure][step] = 0;
+		}
+		else {
+			int currentPage = stepPages[safeMeasure][step];
+			if (currentPage < 4) {
+				stepPages[safeMeasure][step] = currentPage + 1;
+				track->sequencerData.stepPages[safeMeasure][step] = currentPage + 1;
+			}
+			else {
+				track->sequencerData.steps[safeMeasure][step] = false;
+				stepPages[safeMeasure][step] = 0;
+				track->sequencerData.stepPages[safeMeasure][step] = 0;
+			}
+		}
+	}
+	else {
 		track->sequencerData.steps[safeMeasure][step] = !track->sequencerData.steps[safeMeasure][step];
-		track->sequencerData.velocities[safeMeasure][step] = 0.8f;
 	}
 
-	// TODO: velocity
-	if (juce::ModifierKeys::getCurrentModifiers().isShiftDown())
-	{
-		// Shift+click to adjust velocity
-	}
+	track->sequencerData.velocities[safeMeasure][step] = 0.8f;
 }
 
 void SequencerComponent::setCurrentStep(int step)
@@ -336,6 +389,11 @@ void SequencerComponent::resized()
 	if (topArea.getWidth() > 50)
 	{
 		currentPlayingMeasureLabel.setBounds(topArea.removeFromLeft(50));
+		TrackData* track = audioProcessor.getTrack(trackId);
+		if (track && track->usePages.load() && topArea.getWidth() > 120) {
+			topArea.removeFromLeft(5);
+			pageHelpLabel.setBounds(topArea.removeFromLeft(120));
+		}
 	}
 
 	if (controlArea.getWidth() > 80)
@@ -349,7 +407,7 @@ void SequencerComponent::setCurrentMeasure(int measure)
 {
 	currentMeasure = juce::jlimit(0, numMeasures - 1, measure);
 	measureLabel.setText(juce::String(currentMeasure + 1) + "/" + juce::String(numMeasures),
-						 juce::dontSendNotification);
+		juce::dontSendNotification);
 	repaint();
 }
 
@@ -363,7 +421,7 @@ void SequencerComponent::setNumMeasures(int measures)
 		setCurrentMeasure(numMeasures - 1);
 	}
 
-	TrackData *track = audioProcessor.getTrack(trackId);
+	TrackData* track = audioProcessor.getTrack(trackId);
 	if (track)
 	{
 		track->sequencerData.numMeasures = numMeasures;
@@ -383,7 +441,7 @@ void SequencerComponent::setNumMeasures(int measures)
 	}
 
 	measureLabel.setText(juce::String(currentMeasure + 1) + "/" + juce::String(numMeasures),
-						 juce::dontSendNotification);
+		juce::dontSendNotification);
 	repaint();
 }
 
@@ -391,21 +449,32 @@ void SequencerComponent::updateFromTrackData()
 {
 	if (isEditing)
 		return;
-	TrackData *track = audioProcessor.getTrack(trackId);
+	TrackData* track = audioProcessor.getTrack(trackId);
 	if (track)
 	{
+		for (int m = 0; m < 4; ++m) {
+			for (int s = 0; s < 16; ++s) {
+				stepPages[m][s] = track->sequencerData.stepPages[m][s];
+			}
+		}
+		bool showPageHelp = track->usePages.load();
+		pageHelpLabel.setVisible(showPageHelp);
+
+		if (showPageHelp) {
+			pageHelpLabel.setText("Click: A>>B>>C>>D>>USER>>Off", juce::dontSendNotification);
+		}
 		int totalSteps = getTotalStepsForCurrentSignature();
 		currentStep = juce::jlimit(0, totalSteps - 1, track->sequencerData.currentStep);
 		isPlaying = track->isCurrentlyPlaying;
 		numMeasures = track->sequencerData.numMeasures;
 		measureSlider.setValue(track->sequencerData.numMeasures);
 		measureLabel.setText(juce::String(currentMeasure + 1) + "/" + juce::String(numMeasures),
-							 juce::dontSendNotification);
+			juce::dontSendNotification);
 		if (isPlaying)
 		{
 			int playingMeasure = track->sequencerData.currentMeasure + 1;
 			currentPlayingMeasureLabel.setText("M " + juce::String(playingMeasure),
-											   juce::dontSendNotification);
+				juce::dontSendNotification);
 			currentPlayingMeasureLabel.setColour(juce::Label::textColourId, ColourPalette::playActive);
 		}
 		else
@@ -413,7 +482,7 @@ void SequencerComponent::updateFromTrackData()
 			track->sequencerData.currentStep = 0;
 			track->sequencerData.currentMeasure = 0;
 			currentPlayingMeasureLabel.setText("M " + juce::String(track->sequencerData.currentMeasure + 1),
-											   juce::dontSendNotification);
+				juce::dontSendNotification);
 			currentPlayingMeasureLabel.setColour(juce::Label::textColourId, ColourPalette::textSecondary);
 		}
 		repaint();

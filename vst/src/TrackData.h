@@ -93,7 +93,7 @@ struct TrackData
 	TrackPage pages[4];
 	int currentPageIndex = 0;
 	std::atomic<bool> usePages{ false };
-
+	int displayPageIndex = 0;
 	std::atomic<bool> isPlaying{ false };
 	std::atomic<bool> isArmed{ false };
 	std::atomic<bool> isArmedToStop{ false };
@@ -199,6 +199,7 @@ struct TrackData
 		int beatsPerMeasure = 4;
 		double stepAccumulator = 0.0;
 		double samplesPerStep = 0.0;
+		int stepPages[4][16] = {};
 	} sequencerData{};
 
 	TrackData() : trackId(juce::Uuid().toString())
@@ -283,9 +284,31 @@ struct TrackData
 		pages[0].isLoaded = (numSamples > 0);
 
 		currentPageIndex = 0;
+		displayPageIndex = 0;
 		usePages = true;
 
 		DBG("Track " << trackName << " migrated to pages system");
+	}
+
+	DjIaClient::LoopRequest createLoopRequestForDisplayPage(int currentDisplayPageIndex) const
+	{
+		DjIaClient::LoopRequest request;
+		if (usePages && currentDisplayPageIndex >= 0 && currentDisplayPageIndex < 4) {
+			const auto& targetPage = pages[currentDisplayPageIndex];
+			request.prompt = !targetPage.selectedPrompt.isEmpty() ? targetPage.selectedPrompt : targetPage.generationPrompt;
+			request.bpm = targetPage.generationBpm;
+			request.key = targetPage.generationKey;
+			request.generationDuration = static_cast<float>(targetPage.generationDuration);
+			request.preferredStems = targetPage.preferredStems;
+		}
+		else {
+			request.prompt = !selectedPrompt.isEmpty() ? selectedPrompt : generationPrompt;
+			request.bpm = generationBpm;
+			request.key = generationKey;
+			request.generationDuration = static_cast<float>(generationDuration);
+			request.preferredStems = preferredStems;
+		}
+		return request;
 	}
 
 	void setCurrentPage(int pageIndex) {

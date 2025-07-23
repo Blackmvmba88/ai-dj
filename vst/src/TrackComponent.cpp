@@ -374,7 +374,7 @@ void TrackComponent::updateFromTrackData()
 		for (int i = 0; i < 4; ++i) {
 			pageButtons[i].setVisible(true);
 		}
-		pageButtons[track->currentPageIndex].setToggleState(true, juce::dontSendNotification);
+		pageButtons[track->displayPageIndex].setToggleState(true, juce::dontSendNotification);
 		updatePagesDisplay();
 	}
 	else {
@@ -390,9 +390,9 @@ void TrackComponent::updateFromTrackData()
 	randomDurationToggle.setToggleState(track->randomRetriggerDurationEnabled.load(), juce::dontSendNotification);
 
 	if (track->usePages.load()) {
-		const auto& currentPage = track->getCurrentPage();
-		if (currentPage.hasOriginalVersion.load()) {
-			bool useOriginal = currentPage.useOriginalFile.load();
+		const auto& displayPage = track->pages[track->displayPageIndex];
+		if (displayPage.hasOriginalVersion.load()) {
+			bool useOriginal = displayPage.useOriginalFile.load();
 			originalSyncButton.setToggleState(useOriginal, juce::dontSendNotification);
 			originalSyncButton.setButtonText(useOriginal ? juce::String::fromUTF8("\xE2\x97\x8F") : juce::String::fromUTF8("\xE2\x97\x8B"));
 			originalSyncButton.setEnabled(true);
@@ -424,17 +424,31 @@ void TrackComponent::updateFromTrackData()
 
 	bpmOffsetSlider.setValue(track->bpmOffset, juce::dontSendNotification);
 	trackNumberLabel.setColour(juce::Label::backgroundColourId, ColourPalette::getTrackColour(track->slotIndex));
-	if (!track->selectedPrompt.isEmpty())
+
+	juce::String promptToShow;
+	if (track->usePages.load()) {
+		const auto& displayPage = track->pages[track->displayPageIndex];
+		promptToShow = displayPage.selectedPrompt;
+		if (promptToShow.isEmpty()) {
+			promptToShow = displayPage.prompt;
+		}
+	}
+	else {
+		promptToShow = track->selectedPrompt;
+	}
+
+	if (!promptToShow.isEmpty())
 	{
 		for (int i = 0; i < promptPresetSelector.getNumItems(); ++i)
 		{
-			if (promptPresetSelector.getItemText(i) == track->selectedPrompt)
+			if (promptPresetSelector.getItemText(i) == promptToShow)
 			{
 				promptPresetSelector.setSelectedItemIndex(i, juce::dontSendNotification);
 				break;
 			}
 		}
 	}
+
 	if (waveformDisplay)
 	{
 		bool isCurrentlyPlaying = track->isPlaying.load();
@@ -719,7 +733,7 @@ void TrackComponent::onTogglePagesMode()
 void TrackComponent::onPageSelected(int pageIndex)
 {
 	if (!track || !pagesMode || pageIndex < 0 || pageIndex >= 4) return;
-	if (track->currentPageIndex == pageIndex) return;
+	if (track->displayPageIndex == pageIndex) return;
 
 	DBG("Switching to page " << (char)('A' + pageIndex) << " for track " << track->trackName);
 
@@ -729,7 +743,7 @@ void TrackComponent::onPageSelected(int pageIndex)
 	bool wasCurrentlyPlaying = track->isCurrentlyPlaying.load();
 	double currentReadPosition = track->readPosition.load();
 
-	track->setCurrentPage(pageIndex);
+	track->displayPageIndex = pageIndex;
 
 	track->isPlaying = wasPlaying;
 	track->isArmed = wasArmed;
@@ -753,9 +767,10 @@ void TrackComponent::onPageSelected(int pageIndex)
 	updateFromTrackData();
 
 	if (waveformDisplay && showWaveformButton.getToggleState()) {
-		if (newPage.numSamples > 0 && newPage.isLoaded.load()) {
-			waveformDisplay->setAudioData(newPage.audioBuffer, newPage.sampleRate);
-			waveformDisplay->setLoopPoints(newPage.loopStart, newPage.loopEnd);
+		const auto& displayPage = track->pages[track->displayPageIndex];
+		if (displayPage.numSamples > 0 && displayPage.isLoaded.load()) {
+			waveformDisplay->setAudioData(displayPage.audioBuffer, displayPage.sampleRate);
+			waveformDisplay->setLoopPoints(displayPage.loopStart, displayPage.loopEnd);
 			calculateHostBasedDisplay();
 		}
 		else {
@@ -793,6 +808,13 @@ void TrackComponent::onPageSelected(int pageIndex)
 
 		statusCallback("Switched to page " + juce::String(pageName) + " - Empty" + playState);
 	}
+	if (track->currentPageIndex != track->displayPageIndex) {
+		statusCallback("Viewing page " + juce::String((char)('A' + pageIndex)) +
+			" (sequencer playing: " + juce::String((char)('A' + track->currentPageIndex)) + ")");
+	}
+	else {
+		statusCallback("Switched to page " + juce::String((char)('A' + pageIndex)));
+	}
 }
 
 void TrackComponent::updatePagesDisplay()
@@ -800,12 +822,12 @@ void TrackComponent::updatePagesDisplay()
 	if (!track || !pagesMode) return;
 
 	for (int i = 0; i < 4; ++i) {
-		pageButtons[i].setToggleState(i == track->currentPageIndex, juce::dontSendNotification);
+		pageButtons[i].setToggleState(i == track->displayPageIndex, juce::dontSendNotification);
 
 		if (track->pages[i].numSamples > 0) {
 			pageButtons[i].setColour(juce::TextButton::textColourOffId, ColourPalette::textSuccess);
 			pageButtons[i].setColour(juce::TextButton::buttonColourId,
-				i == track->currentPageIndex ? ColourPalette::buttonSuccess : ColourPalette::backgroundLight);
+				i == track->displayPageIndex ? ColourPalette::buttonSuccess : ColourPalette::backgroundLight);
 		}
 		else if (track->pages[i].isLoading.load()) {
 			pageButtons[i].setColour(juce::TextButton::textColourOffId, ColourPalette::amber);
@@ -815,6 +837,9 @@ void TrackComponent::updatePagesDisplay()
 			pageButtons[i].setColour(juce::TextButton::textColourOffId, ColourPalette::textSecondary);
 			pageButtons[i].setColour(juce::TextButton::buttonColourId, ColourPalette::backgroundDark);
 		}
+
+		juce::String buttonText = juce::String((char)('A' + i));
+		pageButtons[i].setButtonText(buttonText);
 	}
 }
 
@@ -1062,27 +1087,25 @@ void TrackComponent::setupUI()
 				if (track)
 				{
 					if (track->usePages.load()) {
-						auto& currentPage = track->getCurrentPage();
-						currentPage.selectedPrompt = promptPresetSelector.getText();
-						currentPage.generationBpm = audioProcessor.getGlobalBpm();
-						currentPage.generationKey = audioProcessor.getGlobalKey();
-						currentPage.generationDuration = audioProcessor.getGlobalDuration();
+						auto& targetPage = track->pages[track->displayPageIndex];
+						targetPage.selectedPrompt = promptPresetSelector.getText();
+						targetPage.generationBpm = audioProcessor.getGlobalBpm();
+						targetPage.generationKey = audioProcessor.getGlobalKey();
+						targetPage.generationDuration = audioProcessor.getGlobalDuration();
 
-						currentPage.preferredStems.clear();
+						targetPage.preferredStems.clear();
 						if (audioProcessor.isGlobalStemEnabled("drums"))
-							currentPage.preferredStems.push_back("drums");
+							targetPage.preferredStems.push_back("drums");
 						if (audioProcessor.isGlobalStemEnabled("bass"))
-							currentPage.preferredStems.push_back("bass");
+							targetPage.preferredStems.push_back("bass");
 						if (audioProcessor.isGlobalStemEnabled("other"))
-							currentPage.preferredStems.push_back("other");
+							targetPage.preferredStems.push_back("other");
 						if (audioProcessor.isGlobalStemEnabled("vocals"))
-							currentPage.preferredStems.push_back("vocals");
+							targetPage.preferredStems.push_back("vocals");
 						if (audioProcessor.isGlobalStemEnabled("guitar"))
-							currentPage.preferredStems.push_back("guitar");
+							targetPage.preferredStems.push_back("guitar");
 						if (audioProcessor.isGlobalStemEnabled("piano"))
-							currentPage.preferredStems.push_back("piano");
-
-						track->syncLegacyProperties();
+							targetPage.preferredStems.push_back("piano");
 					}
 					else {
 						track->selectedPrompt = promptPresetSelector.getText();
