@@ -34,6 +34,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 import getpass
+import shutil
 
 try:
     import keyring  # type: ignore
@@ -61,7 +62,11 @@ def open_folder(path: Path) -> None:
         elif system == "win":
             os.startfile(str(path))  # type: ignore[attr-defined]
         else:
-            subprocess.run(["xdg-open", str(path)], check=False)
+            opener = shutil.which("termux-open") or shutil.which("xdg-open")
+            if opener:
+                subprocess.run([opener, str(path)], check=False)
+            else:
+                subprocess.run(["ls", str(path)], check=False)
     except Exception:
         pass
 
