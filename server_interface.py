@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 #
 # Copyright (C) 2025 Anthony Charretier
+# Contributor: Iyari Cancino Gomez
 
 import platform
 import tkinter as tk
@@ -17,10 +18,10 @@ import time
 from pathlib import Path
 import psutil
 import sqlite3
-import pystray
 from core.paths import get_config_db_path
 
 try:
+    # Importación condicional de pystray para permitir ejecutar sin esta dependencia
     import pystray
     from pystray import MenuItem, Menu
 
@@ -134,17 +135,17 @@ class ObsidianNeuralLauncher:
             ),
             Menu.SEPARATOR,
             MenuItem(
-                "▶️ Start Server" if not self.is_server_running else None,
+                "▶️ Start Server",
                 self.start_server,
                 enabled=not self.is_server_running,
             ),
             MenuItem(
-                "⏹️ Stop Server" if self.is_server_running else None,
+                "⏹️ Stop Server",
                 self.stop_server,
                 enabled=self.is_server_running,
             ),
             MenuItem(
-                "🔄 Restart Server" if self.is_server_running else None,
+                "🔄 Restart Server",
                 self.restart_server,
                 enabled=self.is_server_running,
             ),
@@ -3120,12 +3121,16 @@ class ObsidianNeuralLauncher:
             else:
                 file_managers = ["xdg-open", "nautilus", "dolphin", "thunar", "pcmanfm"]
 
+                opened = False
                 for fm in file_managers:
                     if shutil.which(fm):
-                        subprocess.run([fm, str(project_path)], check=True)
-                        break
-                else:
-                    subprocess.run(["ls", "-la", str(project_path)], check=True)
+                        proc = subprocess.run([fm, str(project_path)], check=False)
+                        if proc.returncode == 0:
+                            opened = True
+                            break
+
+                if not opened:
+                    subprocess.run(["ls", "-la", str(project_path)], check=False)
                     messagebox.showinfo("Folder", f"Project folder: {project_path}")
 
             self.log(f"Project folder opened: {project_path}")
